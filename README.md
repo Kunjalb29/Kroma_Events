@@ -179,7 +179,7 @@ When the dev server is running (`python manage.py runserver`), you can interact 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/signup/ \
   -H "Content-Type: application/json" \
-  -d '{"email": "alice@example.com", "password": "Pass1234!", "role": "SEEKER"}'
+  {"email": "alice@example.com", "password": "Pass1234!", "role": "SEEKER"}
 ```
 
 #### Login Example
