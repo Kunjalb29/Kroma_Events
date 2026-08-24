@@ -1,324 +1,299 @@
-# Kroma Events Platform - Production-Grade Django REST API
+# Kroma Events — Django REST Backend
 
-A highly reliable, production-grade Django REST Framework backend for an Events Platform. Built with explicit concurrency protections, role-based access control, partial unique index state machines, custom error handling, and robust OTP authentication.
-
----
-
-## 🏛️ Architectural Overview
-
-- **Framework**: Django 5.1 & Django REST Framework (DRF).
-- **Authentication**: Built-in Django `django.contrib.auth.models.User` combined with `UserProfile` (`SEEKER` / `FACILITATOR`). SimpleJWT for JWT token issuance.
-- **Database**: PostgreSQL default with automatic fallback to SQLite for local development and test execution.
-- **Concurrency & Locking**: Pessimistic row locking (`select_for_update()`) executed inside database transactions (`transaction.atomic()`) ensuring capacity limits are strictly enforced under high concurrency.
-- **State Machine**: Enrollment state transitions (`ENROLLED` ↔ `CANCELED`) backed by a Django `UniqueConstraint(condition=Q(status='ENROLLED'))` partial index.
-- **Error Standard**: Universal error format across all exceptions: `{"detail": "...", "code": "..."}`.
-- **Pagination Standard**: Consistent pagination shape across all list endpoints: `{"count": N, "next": null, "previous": null, "results": [...]}`.
+Production-grade events platform backend built with Django 4+, DRF, SimpleJWT, and PostgreSQL.
 
 ---
 
-## 🚀 Environment Setup & Installation
+## Table of Contents
+1. [Architecture Summary](#architecture-summary)
+2. [Setup & Run](#setup--run)
+3. [API Reference](#api-reference)
+4. [Seed Data](#seed-data)
+5. [Running Tests](#running-tests)
+6. [Known Limitations & Future Improvements](#known-limitations--future-improvements)
 
-### 1. Prerequisites
+---
+
+## Architecture Summary
+
+| Layer | Choice | Rationale |
+|---|---|---|
+| Framework | Django 4.2 + DRF 3.14 | Stable LTS; battle-tested for REST APIs |
+| Auth | SimpleJWT | Stateless, access+refresh token pair |
+| User model | `django.contrib.auth.models.User` | Spec requirement; `UserProfile` extends via `OneToOneField` |
+| Database | PostgreSQL (SQLite fallback for tests) | Row-level locking (`SELECT FOR UPDATE`) for concurrency |
+| OTP hash | SHA-256 via `hashlib` | Plaintext never stored or logged |
+| OTP generation | `secrets.randbelow` | Cryptographically secure PRNG |
+| Concurrency | `SELECT FOR UPDATE` + `transaction.atomic` | Pessimistic lock prevents overbooking |
+| Errors | `{"detail": "...", "code": "..."}` | Consistent API contract across all endpoints |
+| Pagination | `PageNumberPagination` (page_size=10) | `{"count", "next", "previous", "results"}` |
+
+### Models
+```
+User (Django built-in)
+ └─► UserProfile     — role (SEEKER/FACILITATOR), is_verified
+     EmailOTP        — otp_hash (SHA-256), expires_at, attempts_count, is_active
+
+Event               — title, description, language, location, starts_at, ends_at, capacity, created_by
+Enrollment          — event, seeker, status (ENROLLED/CANCELED), timestamps
+                      partial unique: (event, seeker) WHERE status='ENROLLED'
+```
+
+### OTP Security Design
+- **Stored**: SHA-256(plaintext_OTP) — 64-char hex
+- **TTL**: 5 minutes
+- **Attempts**: max 3; 3rd failure deactivates the token permanently
+- **Resend**: new OTP supersedes (deactivates) all prior active tokens
+- **Comparison**: `secrets.compare_digest` (constant-time, prevents timing attacks)
+
+### Enrollment State Machine
+```
+    [New Seeker]
+         │
+         ▼
+     ENROLLED ──────► CANCELED
+         ▲                │
+         └────────────────┘  (re-enrollment if capacity permits)
+```
+Database constraint: `UniqueConstraint(fields=['event','seeker'], condition=Q(status='ENROLLED'))`
+→ Only one active enrollment per (seeker, event) pair at the DB level.
+
+---
+
+## Setup & Run
+
+### Prerequisites
 - Python 3.10+
-- PostgreSQL (optional for local production testing; SQLite works out-of-the-box)
+- (Optional) PostgreSQL 13+ for production mode
 
-### 2. Virtual Environment Setup
+### 1. Clone & Create Virtual Environment
 ```bash
-# Clone the repository
 git clone https://github.com/Kunjalb29/Kroma_Events.git
 cd Kroma_Events
-
-# Create and activate virtual environment
 python -m venv venv
-
-# On Windows (PowerShell):
-.\venv\Scripts\Activate.ps1
-
-# On Linux/macOS:
+# Windows
+venv\Scripts\activate
+# macOS/Linux
 source venv/bin/activate
 ```
 
-### 3. Install Dependencies
+### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Environment Variables
-Create a `.env` file from the provided example:
+### 3. Configure Environment
 ```bash
+# Copy and edit the example env file
 cp .env.example .env
 ```
-Default `.env` settings:
-```env
-DEBUG=True
-SECRET_KEY=django-insecure-kroma-events-secret-key-production-grade
-ALLOWED_HOSTS=localhost,127.0.0.1
-# DATABASE_URL=sqlite:///db.sqlite3
+
+**SQLite (default — no config needed):**
+No changes required. `db.sqlite3` will be used automatically.
+
+**PostgreSQL:**
+Edit `.env`:
+```
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=kroma_events
+DB_USER=postgres
+DB_PASSWORD=yourpassword
+DB_HOST=localhost
+DB_PORT=5432
 ```
 
-### 5. Database Migrations
+### 4. Run Migrations
 ```bash
-python manage.py makemigrations users events
 python manage.py migrate
 ```
 
----
-
-## 🧪 Automated Test Suite
-
-The test suite covers multi-threaded race conditions, OTP lifecycle policy, and enrollment state transitions:
-
+### 5. (Optional) Seed Sample Data
 ```bash
-# Run pytest suite
-pytest
-
-# Run pytest with verbose output
-pytest -v
+python manage.py seed_data
+# Creates: facilitator@kroma.dev / Pass1234!
+#          seeker1@kroma.dev / Pass1234!
+#          seeker2@kroma.dev / Pass1234!
+#          3 upcoming Events
 ```
 
-### Included Test Files:
-1. `tests/test_concurrency.py`: 5 concurrent threads attempting enrollment on a capacity=10 event with 9 seats taken. Guarantees exactly 1 succeeds and 4 fail with `code='capacity_full'`.
-2. `tests/test_lifecycle.py`: Validates enroll -> cancel -> re-enroll transitions, partial unique constraint, and capacity reclamation.
-3. `tests/test_otp.py`: Validates 5-minute TTL expiration, 3-attempt lockout policy, single-active OTP supersession on resend, and account verification.
+### 6. Start Development Server
+```bash
+python manage.py runserver
+```
+API is available at: `http://127.0.0.1:8000/`
+
+### 7. (Optional) Django Admin
+```bash
+python manage.py createsuperuser
+# Visit http://127.0.0.1:8000/admin/
+```
 
 ---
 
-## 📬 API Endpoint Documentation & Curl Reference
+## API Reference
 
-### 1. Signup (`POST /api/v1/auth/signup/`)
-Rejects any incoming `username` field; autogenerates clean unique username. Sends 6-digit OTP code to console.
+### Base URL: `http://127.0.0.1:8000/api/v1/`
 
-**Request:**
+### Authentication Endpoints (`/auth/`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/auth/signup/` | None | Register user (email, password, role) |
+| POST | `/auth/verify-otp/` | None | Verify email with 6-digit OTP |
+| POST | `/auth/resend-otp/` | None | Resend OTP (supersedes prior) |
+| POST | `/auth/login/` | None | Login → access + refresh tokens |
+| POST | `/auth/token/refresh/` | None | Refresh access token |
+| GET  | `/auth/me/` | JWT | Get own profile |
+
+#### Signup
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/signup/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "seeker@example.com",
-    "password": "SecurePassword123!",
-    "role": "SEEKER"
-  }'
+  -d '{"email": "alice@example.com", "password": "Pass1234!", "role": "SEEKER"}'
 ```
-
-**Response (201 Created):**
+Response `201`:
 ```json
 {
-  "detail": "User registered successfully. An OTP has been sent to your email address.",
-  "email": "seeker@example.com",
+  "detail": "Account created successfully. A 6-digit verification code has been sent to your email address.",
+  "email": "alice@example.com",
   "role": "SEEKER",
   "is_verified": false
 }
 ```
 
----
-
-### 2. Verify OTP (`POST /api/v1/auth/verify-otp/`)
-Verifies SHA-256 hashed OTP code.
-
-**Request:**
+#### Verify OTP
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/verify-otp/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "seeker@example.com",
-    "otp": "123456"
-  }'
+  -d '{"email": "alice@example.com", "otp": "482915"}'
 ```
+> **Note**: In development, the OTP is printed to the Django console (EMAIL_BACKEND=console).
 
-**Response (200 OK):**
-```json
-{
-  "detail": "Email verified successfully. You can now log in.",
-  "is_verified": true
-}
-```
-
----
-
-### 3. Resend OTP (`POST /api/v1/auth/resend-otp/`)
-Invalidates prior active OTPs and generates a fresh 5-minute TTL OTP.
-
-**Request:**
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/auth/resend-otp/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "seeker@example.com"
-  }'
-```
-
-**Response (200 OK):**
-```json
-{
-  "detail": "A new OTP has been sent to your email address."
-}
-```
-
----
-
-### 4. Login (`POST /api/v1/auth/login/`)
-Blocks unverified users (`is_verified=false`). Returns JWT tokens upon verification.
-
-**Request:**
+#### Login
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "seeker@example.com",
-    "password": "SecurePassword123!"
-  }'
+  -d '{"email": "alice@example.com", "password": "Pass1234!"}'
 ```
-
-**Response (200 OK):**
+Response `200`:
 ```json
 {
-  "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": 1,
-    "email": "seeker@example.com",
-    "role": "SEEKER",
-    "is_verified": true
-  }
+  "access": "<jwt_access_token>",
+  "refresh": "<jwt_refresh_token>",
+  "user": {"id": 1, "email": "alice@example.com", "role": "SEEKER", "is_verified": true}
 }
 ```
 
----
+### Event Endpoints (`/events/`)
 
-### 5. Create Event (Facilitator Only) (`POST /api/v1/events/`)
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| GET | `/events/` | Optional | Any | List/search events (paginated) |
+| POST | `/events/` | JWT | FACILITATOR | Create event |
+| GET | `/events/<id>/` | JWT | Any | Retrieve event detail |
+| PATCH/PUT | `/events/<id>/` | JWT | FACILITATOR+Owner | Update event |
+| DELETE | `/events/<id>/` | JWT | FACILITATOR+Owner | Delete event |
+| POST | `/events/<id>/enroll/` | JWT | SEEKER | Enroll in event |
+| POST | `/events/<id>/cancel/` | JWT | SEEKER | Cancel enrollment |
+| GET | `/events/my-enrollments/` | JWT | SEEKER | List own enrollments |
 
-**Request:**
+#### Search Parameters (GET `/events/`)
+| Param | Type | Description |
+|---|---|---|
+| `q` | string | Full-text search in title + description |
+| `location` | string | Filter by location (case-insensitive) |
+| `language` | string | Filter by language |
+| `starts_after` | ISO-8601 | Events starting after this datetime |
+| `starts_before` | ISO-8601 | Events starting before this datetime |
+| `page` | int | Page number |
+| `page_size` | int | Results per page (max 100) |
+
+#### Create Event (Facilitator)
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/events/ \
-  -H "Authorization: Bearer <FACILITATOR_JWT_ACCESS_TOKEN>" \
+  -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Django Concurrency Masterclass",
-    "description": "Deep dive into pessimistic locking and row isolation.",
+    "title": "Django Workshop",
+    "description": "Learn advanced DRF patterns",
     "language": "English",
-    "location": "Online - Zoom",
-    "starts_at": "2026-09-01T10:00:00Z",
-    "ends_at": "2026-09-01T12:00:00Z",
+    "location": "Online",
+    "starts_at": "2026-09-15T10:00:00Z",
+    "ends_at": "2026-09-15T13:00:00Z",
     "capacity": 50
   }'
 ```
 
-**Response (201 Created):**
+### Error Response Shape
+All errors follow:
 ```json
-{
-  "id": 1,
-  "title": "Django Concurrency Masterclass",
-  "description": "Deep dive into pessimistic locking and row isolation.",
-  "language": "English",
-  "location": "Online - Zoom",
-  "starts_at": "2026-09-01T10:00:00Z",
-  "ends_at": "2026-09-01T12:00:00Z",
-  "capacity": 50,
-  "created_by": 2,
-  "created_by_email": "facilitator@example.com",
-  "enrolled_count": 0,
-  "available_seats": 50,
-  "created_at": "2026-08-24T18:00:00Z",
-  "updated_at": "2026-08-24T18:00:00Z"
-}
+{"detail": "Human-readable message.", "code": "machine_readable_code"}
 ```
+
+| Code | HTTP | Description |
+|---|---|---|
+| `otp_invalid` | 400 | Wrong OTP code |
+| `otp_expired` | 400 | OTP TTL exceeded |
+| `otp_max_attempts_exceeded` | 400 | 3 wrong attempts |
+| `already_verified` | 400 | Account already verified |
+| `user_unverified` | 403 | Login before verification |
+| `invalid_credentials` | 401 | Wrong email/password |
+| `capacity_full` | 400 | Event at capacity |
+| `already_enrolled` | 400 | Seeker already enrolled |
+| `enrollment_not_found` | 404 | No active enrollment to cancel |
+| `permission_denied` | 403 | Role/ownership violation |
+| `invalid_input` | 400 | Serializer validation error |
 
 ---
 
-### 6. List & Search Events (`GET /api/v1/events/`)
-Supports filtering by `q`, `location`, `language`, `starts_after`, `starts_before`. Default ordering: upcoming first (`starts_at` ASC).
+## Seed Data
 
-**Request:**
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/events/?q=concurrency&location=Online&starts_after=2026-08-01T00:00:00Z"
+python manage.py seed_data
 ```
 
-**Response (200 OK):**
-```json
-{
-  "count": 1,
-  "next": null,
-  "previous": null,
-  "results": [
-    {
-      "id": 1,
-      "title": "Django Concurrency Masterclass",
-      "description": "Deep dive into pessimistic locking and row isolation.",
-      "language": "English",
-      "location": "Online - Zoom",
-      "starts_at": "2026-09-01T10:00:00Z",
-      "ends_at": "2026-09-01T12:00:00Z",
-      "capacity": 50,
-      "created_by": 2,
-      "created_by_email": "facilitator@example.com",
-      "enrolled_count": 0,
-      "available_seats": 50,
-      "created_at": "2026-08-24T18:00:00Z",
-      "updated_at": "2026-08-24T18:00:00Z"
-    }
-  ]
-}
-```
+| Account | Email | Password | Role |
+|---|---|---|---|
+| Facilitator | facilitator@kroma.dev | Pass1234! | FACILITATOR |
+| Seeker 1 | seeker1@kroma.dev | Pass1234! | SEEKER |
+| Seeker 2 | seeker2@kroma.dev | Pass1234! | SEEKER |
+
+3 upcoming Events are also created (next 3/7/14 days).
 
 ---
 
-### 7. Enroll in Event (Seeker Only) (`POST /api/v1/events/1/enroll/`)
+## Running Tests
 
-**Request:**
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/events/1/enroll/ \
-  -H "Authorization: Bearer <SEEKER_JWT_ACCESS_TOKEN>"
+# All tests
+pytest
+
+# Verbose output
+pytest -v
+
+# Specific test file
+pytest tests/test_otp.py -v
+pytest tests/test_lifecycle.py -v
+pytest tests/test_concurrency.py -v
 ```
 
-**Response (201 Created):**
-```json
-{
-  "detail": "Successfully enrolled in event.",
-  "enrollment": {
-    "id": 1,
-    "event": 1,
-    "event_title": "Django Concurrency Masterclass",
-    "event_starts_at": "2026-09-01T10:00:00Z",
-    "seeker": 1,
-    "seeker_email": "seeker@example.com",
-    "status": "ENROLLED",
-    "created_at": "2026-08-24T18:05:00Z",
-    "updated_at": "2026-08-24T18:05:00Z"
-  }
-}
-```
+### Test Coverage Summary
+
+| File | What it tests |
+|---|---|
+| `test_otp.py` | OTP hash storage, verification, TTL expiry, 3-attempt lockout, resend supersession |
+| `test_lifecycle.py` | Enroll/cancel/re-enroll cycle, duplicate rejection, capacity reclamation |
+| `test_concurrency.py` | 5 concurrent seekers, 1 seat remaining → exactly 1 success, no overbooking |
 
 ---
 
-### 8. Cancel Enrollment (Seeker Only) (`POST /api/v1/events/1/cancel/`)
+## Known Limitations & Future Improvements
 
-**Request:**
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/events/1/cancel/ \
-  -H "Authorization: Bearer <SEEKER_JWT_ACCESS_TOKEN>"
-```
-
-**Response (200 OK):**
-```json
-{
-  "detail": "Enrollment successfully canceled.",
-  "enrollment": {
-    "id": 1,
-    "event": 1,
-    "event_title": "Django Concurrency Masterclass",
-    "event_starts_at": "2026-09-01T10:00:00Z",
-    "seeker": 1,
-    "seeker_email": "seeker@example.com",
-    "status": "CANCELED",
-    "created_at": "2026-08-24T18:05:00Z",
-    "updated_at": "2026-08-24T18:10:00Z"
-  }
-}
-```
-
----
-
-## 🔮 Future Improvements
-
-1. **Redis-backed Celery Task Queue**: Asynchronous OTP email dispatching to eliminate blocking HTTP latency on signup/resend.
-2. **WebSockets (Django Channels)**: Real-time event capacity updates pushed live to client frontends when available seats drop to zero.
-3. **Full-Text Search (PostgreSQL `SearchVector`)**: Upgrade `icontains` queries to full-text search with ranking and stemmed keyword matching across title and description.
+1. **Email backend**: Uses Django console backend for development. In production, swap for SendGrid/SES/SMTP via `EMAIL_BACKEND` environment variable.
+2. **OTP not returned in API**: By design. The console backend prints it to stdout for local dev. A real SMTP provider would deliver it to the user's inbox.
+3. **No rate limiting**: Signup and OTP endpoints should be rate-limited (e.g., `django-ratelimit` or an API gateway) in production.
+4. **No token blacklisting**: JWT refresh tokens are stateless. For revocation, add `rest_framework_simplejwt.token_blacklist` to `INSTALLED_APPS`.
+5. **Pagination on all list views**: Events list is paginated. Enrollment list is also paginated but typically small for a single user.
+6. **Docker Compose**: Adding a `docker-compose.yml` with PostgreSQL + Django would simplify local setup.
+7. **Event past-date validation**: Currently events can be created with `starts_at` in the past. A production system should reject this.
+8. **Soft-delete for Events**: Deleting an event cascades to its enrollments. A soft-delete approach would preserve audit history.
