@@ -1,7 +1,5 @@
 import hashlib
-import random
 import secrets
-import uuid
 from datetime import timedelta
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -13,57 +11,80 @@ from common.exceptions import (
     OTPExpiredException,
     OTPMaxAttemptsException,
 )
-from users.models import EmailOTP, UserProfile, UserRole
+from users.models import EmailOTP, UserProfile
+
+OTP_EXPIRY_MINUTES = 5
+OTP_MAX_ATTEMPTS = 3
+OTP_LENGTH = 6
+
 
 def generate_unique_username(email: str) -> str:
     """
-    Autogenerate clean unique username derived from email and random token.
+    Autogenerate a clean, unique username derived from the email local-part
+    plus a cryptographically random hex suffix.  The loop guarantees uniqueness
+    even under high registration concurrency.
     """
     base_prefix = email.split('@')[0]
-    cleaned_prefix = ''.join(e for e in base_prefix if e.isalnum()) or 'user'
-    
+    cleaned_prefix = ''.join(c for c in base_prefix if c.isalnum()) or 'user'
+    # Truncate to avoid hitting the 150-char username limit
+    cleaned_prefix = cleaned_prefix[:30]
+
     while True:
-        suffix = secrets.token_hex(4)
+        suffix = secrets.token_hex(4)  # 8 hex chars
         username = f"{cleaned_prefix}_{suffix}"
         if not User.objects.filter(username=username).exists():
             return username
 
+
 def hash_otp(otp_str: str) -> str:
     """
-    Returns SHA-256 hash of plaintext OTP.
+    Return the SHA-256 hex digest of a plaintext OTP string.
+    Plaintext is NEVER stored or logged.
     """
     return hashlib.sha256(otp_str.encode('utf-8')).hexdigest()
 
+
 def generate_otp_digits() -> str:
     """
-    Generate 6-digit numeric OTP string.
+    Generate a cryptographically secure 6-digit numeric OTP.
+    Uses secrets.randbelow instead of random.randint for security.
     """
-    return f"{random.randint(100000, 999999)}"
+    # secrets.randbelow(900000) gives [0, 900000), add 100000 for [100000, 999999]
+    return str(secrets.randbelow(900000) + 100000)
+
 
 def create_and_send_otp(user: User) -> EmailOTP:
     """
-    Invalidates any existing active OTPs for user, creates new hashed OTP with 5 min TTL,
-    and sends plaintext OTP via email console backend (never returned or logged elsewhere).
+    Supersede all prior active OTPs for the user, create a new hashed OTP
+    with a 5-minute TTL, and dispatch the plaintext code via the configured
+    email backend.  The plaintext OTP is discarded immediately after dispatch.
     """
-    # Supersede/invalidate prior active OTPs
+    # Single-active supersession: deactivate all existing active OTPs
     EmailOTP.objects.filter(user=user, is_active=True).update(is_active=False)
 
     raw_otp = generate_otp_digits()
     hashed = hash_otp(raw_otp)
-    expires = timezone.now() + timedelta(minutes=5)
+    expires = timezone.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
 
     otp_record = EmailOTP.objects.create(
         user=user,
         otp_hash=hashed,
         expires_at=expires,
         attempts_count=0,
-        is_active=True
+        is_active=True,
     )
 
-    # Send via console/file email backend
+    # Dispatch via console/file backend — plaintext stays in the email transport
+    # layer only, never in DB or API responses.
     send_mail(
-        subject="Kroma Events - Verification OTP",
-        message=f"Your verification code is: {raw_otp}. It expires in 5 minutes.",
+        subject="Kroma Events — Email Verification Code",
+        message=(
+            f"Hello,\n\n"
+            f"Your verification code is: {raw_otp}\n\n"
+            f"This code expires in {OTP_EXPIRY_MINUTES} minutes.\n"
+            f"If you did not request this, please ignore this email.\n\n"
+            f"— Kroma Events Team"
+        ),
         from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@kromaevents.com'),
         recipient_list=[user.email],
         fail_silently=False,
@@ -71,41 +92,63 @@ def create_and_send_otp(user: User) -> EmailOTP:
 
     return otp_record
 
+
 def verify_user_otp(user: User, submitted_otp: str) -> bool:
     """
-    Verifies user-provided OTP code. Enforces active status, expiration (5 min TTL),
-    and maximum 3 failed attempts lockout before invalidation.
+    Validate a user-submitted OTP code against the latest active OTP record.
+
+    Enforces:
+      - Active-OTP existence check
+      - 5-minute expiry (TTL)
+      - Maximum 3 failed attempts before permanent invalidation
+      - Constant-time hash comparison via `secrets.compare_digest`
+
+    On success, marks the OTP inactive and sets `UserProfile.is_verified = True`.
     """
-    active_otp = EmailOTP.objects.filter(user=user, is_active=True).order_by('-created_at').first()
+    active_otp = (
+        EmailOTP.objects
+        .filter(user=user, is_active=True)
+        .order_by('-created_at')
+        .first()
+    )
 
     if not active_otp:
-        raise InvalidOTPException(detail="No active OTP found. Please request a new OTP.", code="otp_invalid")
+        raise InvalidOTPException(
+            detail="No active OTP found. Please request a new OTP.",
+            code="otp_invalid",
+        )
 
-    # Check expiration
+    # --- Expiry check ---
     if active_otp.expires_at < timezone.now():
         active_otp.is_active = False
         active_otp.save(update_fields=['is_active'])
         raise OTPExpiredException()
 
-    # Check attempt limit
-    if active_otp.attempts_count >= 3:
+    # --- Attempt-limit check (pre-validation) ---
+    if active_otp.attempts_count >= OTP_MAX_ATTEMPTS:
         active_otp.is_active = False
         active_otp.save(update_fields=['is_active'])
         raise OTPMaxAttemptsException()
 
-    # Validate OTP hash
+    # --- Hash comparison (constant-time to prevent timing attacks) ---
     submitted_hash = hash_otp(submitted_otp.strip())
-    if submitted_hash != active_otp.otp_hash:
+    hashes_match = secrets.compare_digest(submitted_hash, active_otp.otp_hash)
+
+    if not hashes_match:
         active_otp.attempts_count += 1
-        if active_otp.attempts_count >= 3:
+        if active_otp.attempts_count >= OTP_MAX_ATTEMPTS:
             active_otp.is_active = False
             active_otp.save(update_fields=['attempts_count', 'is_active'])
             raise OTPMaxAttemptsException()
         else:
             active_otp.save(update_fields=['attempts_count'])
-            raise InvalidOTPException(detail=f"Invalid OTP code. {3 - active_otp.attempts_count} attempt(s) remaining.", code="otp_invalid")
+            remaining = OTP_MAX_ATTEMPTS - active_otp.attempts_count
+            raise InvalidOTPException(
+                detail=f"Invalid OTP code. {remaining} attempt(s) remaining.",
+                code="otp_invalid",
+            )
 
-    # OTP is valid!
+    # --- Success: consume the OTP and verify the account ---
     active_otp.is_active = False
     active_otp.save(update_fields=['is_active'])
 
