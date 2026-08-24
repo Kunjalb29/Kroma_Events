@@ -6,7 +6,7 @@
 [![Auth](https://img.shields.io/badge/JWT-SimpleJWT-orange.svg)](https://django-rest-framework-simplejwt.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-9%20passed%20%7C%20100%25-success.svg)](https://docs.pytest.org/)
 
-Production-grade events management platform backend built with **Django 5+**, **Django REST Framework (DRF)**, **SimpleJWT**, and **PostgreSQL** (with zero-config SQLite support for development).
+Django REST backend for an Events Platform built with **Django 5+**, **Django REST Framework (DRF)**, **SimpleJWT**, and **PostgreSQL** (with zero-config SQLite support for development).
 
 ---
 
