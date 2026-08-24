@@ -45,7 +45,7 @@ class Command(BaseCommand):
             user=facilitator,
             defaults={"role": UserRole.FACILITATOR, "is_verified": True},
         )
-        self.stdout.write(f"  ✓ Facilitator: {FACILITATOR_EMAIL} / {PASSWORD}")
+        self.stdout.write(f"  [+] Facilitator: {FACILITATOR_EMAIL} / {PASSWORD}")
 
         # --- Seekers ---
         for i, email in enumerate([SEEKER1_EMAIL, SEEKER2_EMAIL], start=1):
@@ -60,7 +60,7 @@ class Command(BaseCommand):
                 user=seeker,
                 defaults={"role": UserRole.SEEKER, "is_verified": True},
             )
-            self.stdout.write(f"  ✓ Seeker:      {email} / {PASSWORD}")
+            self.stdout.write(f"  [+] Seeker:      {email} / {PASSWORD}")
 
         # --- Events ---
         now = timezone.now()
@@ -100,6 +100,6 @@ class Command(BaseCommand):
                 defaults={**data, "created_by": facilitator},
             )
             action = "Created" if created else "Already exists"
-            self.stdout.write(f"  ✓ Event:       {action} — {event.title}")
+            self.stdout.write(f"  [+] Event:       {action} - {event.title}")
 
         self.stdout.write(self.style.SUCCESS("\nSeed complete. Login credentials printed above."))
