@@ -10,15 +10,9 @@ class BaseCustomException(APIException):
     def __init__(self, detail=None, code=None, status_code=None):
         if status_code is not None:
             self.status_code = status_code
-        if detail is not None:
-            self.detail = detail
-        else:
-            self.detail = self.default_detail
-        if code is not None:
-            self.code = code
-        else:
-            self.code = self.default_code
-        super().__init__(detail=self.detail, code=self.code)
+        detail_val = detail if detail is not None else self.default_detail
+        code_val = code if code is not None else self.default_code
+        super().__init__(detail=detail_val, code=code_val)
 
 class InvalidOTPException(BaseCustomException):
     status_code = status.HTTP_400_BAD_REQUEST
@@ -63,18 +57,20 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
     if response is not None:
-        detail_msg = ""
+        detail_msg = "An error occurred."
         code_str = getattr(exc, 'default_code', 'error')
-        if hasattr(exc, 'code') and exc.code:
+
+        if hasattr(exc, 'detail') and hasattr(exc.detail, 'code') and exc.detail.code:
+            code_str = str(exc.detail.code)
+        elif hasattr(exc, 'code') and exc.code:
             code_str = str(exc.code)
 
         if isinstance(response.data, dict):
-            # Check if DRF or serializer validation error dictionary
             if 'detail' in response.data:
                 raw_detail = response.data['detail']
-                if hasattr(raw_detail, 'code'):
-                    code_str = str(raw_detail.code)
                 detail_msg = str(raw_detail)
+                if hasattr(raw_detail, 'code') and raw_detail.code:
+                    code_str = str(raw_detail.code)
             elif 'non_field_errors' in response.data:
                 raw_errors = response.data['non_field_errors']
                 if isinstance(raw_errors, list) and len(raw_errors) > 0:
@@ -83,17 +79,15 @@ def custom_exception_handler(exc, context):
                     detail_msg = str(raw_errors)
                 code_str = 'invalid_input'
             else:
-                # Format serializer errors: field_name: error message
                 formatted_errors = []
                 for field, errors in response.data.items():
                     if isinstance(errors, list):
-                        msg = errors[0]
+                        msg = str(errors[0])
                     else:
                         msg = str(errors)
                     formatted_errors.append(f"{field}: {msg}")
                 detail_msg = "; ".join(formatted_errors)
                 code_str = 'invalid_input'
-
         elif isinstance(response.data, list):
             if len(response.data) > 0:
                 detail_msg = str(response.data[0])
@@ -105,8 +99,8 @@ def custom_exception_handler(exc, context):
 
         # Standard error response shape
         response.data = {
-            'detail': detail_msg,
-            'code': code_str
+            'detail': str(detail_msg),
+            'code': str(code_str)
         }
 
     return response

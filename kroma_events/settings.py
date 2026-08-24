@@ -81,6 +81,9 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                'timeout': 30,
+            }
         }
     }
 
@@ -119,7 +122,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    'DEFAULT_EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'common.pagination.StandardResultsSetPagination',
     'PAGE_SIZE': 10,
 }
