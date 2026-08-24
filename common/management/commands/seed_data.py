@@ -33,6 +33,21 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write("Seeding data...")
 
+        # --- Admin Superuser ---
+        admin_user, _ = User.objects.get_or_create(
+            username="admin",
+            email="admin@kroma.dev",
+        )
+        admin_user.set_password(PASSWORD)
+        admin_user.is_staff = True
+        admin_user.is_superuser = True
+        admin_user.save()
+        UserProfile.objects.update_or_create(
+            user=admin_user,
+            defaults={"role": UserRole.FACILITATOR, "is_verified": True},
+        )
+        self.stdout.write(f"  [+] Superuser:   admin / {PASSWORD}")
+
         # --- Facilitator ---
         facilitator, created = User.objects.get_or_create(
             email=FACILITATOR_EMAIL,
