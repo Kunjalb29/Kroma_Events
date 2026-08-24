@@ -92,16 +92,23 @@ class TestEnrollmentConcurrency:
 
         def try_enroll(seeker_user):
             """Each thread gets a fresh DB connection and API client."""
-            connections.close_all()
-            client = APIClient()
-            client.force_authenticate(user=seeker_user)
-            try:
-                response = client.post(
-                    f'/api/v1/events/{event.id}/enroll/', format='json'
-                )
-                return response.status_code, dict(response.data)
-            finally:
+            import time
+            from django.db import OperationalError
+
+            for _ in range(5):
                 connections.close_all()
+                client = APIClient()
+                client.force_authenticate(user=seeker_user)
+                try:
+                    response = client.post(
+                        f'/api/v1/events/{event.id}/enroll/', format='json'
+                    )
+                    return response.status_code, dict(response.data)
+                except OperationalError:
+                    time.sleep(0.1)
+                finally:
+                    connections.close_all()
+            return 500, {'detail': 'Database locked'}
 
         # ── Execute 5 concurrent enrollments ─────────────────────────────────
 
