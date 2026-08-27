@@ -17,9 +17,9 @@ Django REST backend for an Events Platform built with **Django 5+**, **Django RE
 
 | Service | Live URL | Notes |
 |---|---|---|
-| **DRF Browsable API** | [https://kroma-events-production.up.railway.app/api/v1/events/](https://kroma-events-production.up.railway.app/api/v1/events/) | Interactive browser testing — no auth needed to browse events |
-| **Django Admin Panel** | [https://kroma-events-production.up.railway.app/admin/](https://kroma-events-production.up.railway.app/admin/) | Login: `admin` / `Pass1234!` |
-| **API Base URL** | `https://kroma-events-production.up.railway.app/api/v1/` | Base prefix for all API calls |
+| **DRF Browsable API** | [https://kromaevents-production.up.railway.app/api/v1/events/](https://kromaevents-production.up.railway.app/api/v1/events/) | Interactive browser testing — no auth needed to browse events |
+| **Django Admin Panel** | [https://kromaevents-production.up.railway.app/admin/](https://kromaevents-production.up.railway.app/admin/) | Login: `admin` / `Pass1234!` |
+| **API Base URL** | `https://kromaevents-production.up.railway.app/api/v1/` | Base prefix for all API calls |
 
 ### 🔑 Pre-Seeded Credentials (ready to use immediately)
 
@@ -34,15 +34,15 @@ Django REST backend for an Events Platform built with **Django 5+**, **Django RE
 
 ```bash
 # 1. Login and get JWT token
-curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/login/ \
+curl -X POST https://kromaevents-production.up.railway.app/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"email": "seeker1@kroma.dev", "password": "Pass1234!"}'
 
 # 2. List all events (no auth required)
-curl https://kroma-events-production.up.railway.app/api/v1/events/
+curl https://kromaevents-production.up.railway.app/api/v1/events/
 
 # 3. Enroll in event #1 (replace <token> with access token from step 1)
-curl -X POST https://kroma-events-production.up.railway.app/api/v1/events/1/enroll/ \
+curl -X POST https://kromaevents-production.up.railway.app/api/v1/events/1/enroll/ \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -200,7 +200,7 @@ The API backend will start listening at `http://127.0.0.1:8000/`.
 
 ## 📖 API Reference
 
-> **Base URL (Live):** `https://kroma-events-production.up.railway.app/api/v1/`  
+> **Base URL (Live):** `https://kromaevents-production.up.railway.app/api/v1/`  
 > **Base URL (Local):** `http://127.0.0.1:8000/api/v1/`
 
 ### 1. Authentication Endpoints (`/api/v1/auth/`)
@@ -216,14 +216,14 @@ The API backend will start listening at `http://127.0.0.1:8000/`.
 
 #### Signup Example
 ```bash
-curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/signup/ \
+curl -X POST https://kromaevents-production.up.railway.app/api/v1/auth/signup/ \
   -H "Content-Type: application/json" \
   {"email": "alice@example.com", "password": "Pass1234!", "role": "SEEKER"}
 ```
 
 #### Login Example
 ```bash
-curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/login/ \
+curl -X POST https://kromaevents-production.up.railway.app/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"email": "seeker1@kroma.dev", "password": "Pass1234!"}'
 ```
