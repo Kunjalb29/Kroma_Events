@@ -5,8 +5,46 @@
 [![REST Framework](https://img.shields.io/badge/DRF-3.17-red.svg)](https://www.django-rest-framework.org/)
 [![Auth](https://img.shields.io/badge/JWT-SimpleJWT-orange.svg)](https://django-rest-framework-simplejwt.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-9%20passed%20%7C%20100%25-success.svg)](https://docs.pytest.org/)
+[![Deploy](https://img.shields.io/badge/deployed-Railway-blueviolet.svg)](https://railway.app/)
 
 Django REST backend for an Events Platform built with **Django 5+**, **Django REST Framework (DRF)**, **SimpleJWT**, and **PostgreSQL** (with zero-config SQLite support for development).
+
+---
+
+## 🌐 Live Demo (No Setup Required)
+
+> **The API is publicly deployed on Railway. No `git clone`, Python, or `runserver` needed.**
+
+| Service | Live URL | Notes |
+|---|---|---|
+| **DRF Browsable API** | [https://kroma-events-production.up.railway.app/api/v1/events/](https://kroma-events-production.up.railway.app/api/v1/events/) | Interactive browser testing — no auth needed to browse events |
+| **Django Admin Panel** | [https://kroma-events-production.up.railway.app/admin/](https://kroma-events-production.up.railway.app/admin/) | Login: `admin` / `Pass1234!` |
+| **API Base URL** | `https://kroma-events-production.up.railway.app/api/v1/` | Base prefix for all API calls |
+
+### 🔑 Pre-Seeded Credentials (ready to use immediately)
+
+| Role | Email | Password |
+|---|---|---|
+| **Admin** | `admin@kroma.dev` | `Pass1234!` |
+| **Facilitator** | `facilitator@kroma.dev` | `Pass1234!` |
+| **Seeker 1** | `seeker1@kroma.dev` | `Pass1234!` |
+| **Seeker 2** | `seeker2@kroma.dev` | `Pass1234!` |
+
+### ⚡ Quick API Test (copy-paste ready)
+
+```bash
+# 1. Login and get JWT token
+curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "seeker1@kroma.dev", "password": "Pass1234!"}'
+
+# 2. List all events (no auth required)
+curl https://kroma-events-production.up.railway.app/api/v1/events/
+
+# 3. Enroll in event #1 (replace <token> with access token from step 1)
+curl -X POST https://kroma-events-production.up.railway.app/api/v1/events/1/enroll/ \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 
@@ -15,13 +53,12 @@ Django REST backend for an Events Platform built with **Django 5+**, **Django RE
 1. [Key Features & Highlights](#-key-features--highlights)
 2. [Engineering Challenges](#-engineering-challenges)
 3. [Architecture & Security Design](#-architecture--security-design)
-4. [Quick Start Guide](#-quick-start-guide)
-5. [Localhost Quick Reference & URLs](#-localhost-quick-reference--urls)
-6. [API Reference](#-api-reference)
-7. [Pre-Seeded Test Credentials](#-pre-seeded-test-credentials)
-8. [Running Automated Tests](#-running-automated-tests)
-9. [IDE Setup & Import Resolution](#-ide-setup--import-resolution)
-10. [Known Limitations & Future Improvements](#-known-limitations--future-improvements)
+4. [Quick Start Guide (Local)](#-quick-start-guide-local)
+5. [API Reference](#-api-reference)
+6. [Running Automated Tests](#-running-automated-tests)
+7. [Deploying to Railway](#-deploying-to-railway)
+8. [IDE Setup & Import Resolution](#-ide-setup--import-resolution)
+9. [Known Limitations & Future Improvements](#-known-limitations--future-improvements)
 
 ---
 
@@ -78,6 +115,7 @@ The core implementation directly solves three primary engineering challenges:
 | **OTP Hashing** | SHA-256 via `hashlib` | Zero plaintext persistence |
 | **Concurrency** | `SELECT FOR UPDATE` + `transaction.atomic()` | Pessimistic locking guarantees zero overbooking |
 | **Pagination** | `PageNumberPagination` (default 10) | Standard `{"count", "next", "previous", "results"}` format |
+| **Static Files** | WhiteNoise | Serves Django Admin static files without a separate CDN |
 
 ### Data Models & Hierarchy
 
@@ -103,7 +141,9 @@ Enrollment          — event, seeker, status (ENROLLED / CANCELED), timestamps
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start Guide (Local)
+
+> **Prefer not to run locally?** Use the [Live Demo](#-live-demo-no-setup-required) above.
 
 ### Prerequisites
 - **Python 3.10+** installed on your system.
@@ -148,13 +188,9 @@ python manage.py runserver
 ```
 The API backend will start listening at `http://127.0.0.1:8000/`.
 
----
+### Local Quick Reference
 
-## 🔗 Localhost Quick Reference & URLs
-
-When the dev server is running (`python manage.py runserver`), you can interact with the system via:
-
-| Service / Interface | Localhost URL | Notes / Credentials |
+| Service / Interface | Local URL | Notes / Credentials |
 |---|---|---|
 | **Django Admin Panel** | [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) | `admin` / `Pass1234!` |
 | **DRF Browsable API** | [http://127.0.0.1:8000/api/v1/events/](http://127.0.0.1:8000/api/v1/events/) | Interactive browser testing |
@@ -163,6 +199,9 @@ When the dev server is running (`python manage.py runserver`), you can interact 
 ---
 
 ## 📖 API Reference
+
+> **Base URL (Live):** `https://kroma-events-production.up.railway.app/api/v1/`  
+> **Base URL (Local):** `http://127.0.0.1:8000/api/v1/`
 
 ### 1. Authentication Endpoints (`/api/v1/auth/`)
 
@@ -177,16 +216,16 @@ When the dev server is running (`python manage.py runserver`), you can interact 
 
 #### Signup Example
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/auth/signup/ \
+curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/signup/ \
   -H "Content-Type: application/json" \
   {"email": "alice@example.com", "password": "Pass1234!", "role": "SEEKER"}
 ```
 
 #### Login Example
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/auth/login/ \
+curl -X POST https://kroma-events-production.up.railway.app/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
-  -d '{"email": "alice@example.com", "password": "Pass1234!"}'
+  -d '{"email": "seeker1@kroma.dev", "password": "Pass1234!"}'
 ```
 
 ---
@@ -203,19 +242,6 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login/ \
 | `POST` | `/api/v1/events/<id>/enroll/` | JWT | `SEEKER` | Enroll in event |
 | `POST` | `/api/v1/events/<id>/cancel/` | JWT | `SEEKER` | Cancel enrollment |
 | `GET` | `/api/v1/events/my-enrollments/` | JWT | `SEEKER` | List authenticated user's enrollments |
-
----
-
-## 🔑 Pre-Seeded Test Credentials
-
-Running `python manage.py seed_data` populates the database with the following demo accounts:
-
-| Role | Username / Email | Password | Status |
-|---|---|---|---|
-| **Superuser / Admin** | `admin` / `admin@kroma.dev` | `Pass1234!` | Verified |
-| **Facilitator** | `facilitator@kroma.dev` | `Pass1234!` | Verified |
-| **Seeker 1** | `seeker1@kroma.dev` | `Pass1234!` | Verified |
-| **Seeker 2** | `seeker2@kroma.dev` | `Pass1234!` | Verified |
 
 ---
 
@@ -250,9 +276,40 @@ pytest -v tests/test_otp.py
 
 | Test Suite | Focus Area |
 |---|---|
-| [`tests/test_concurrency.py`](file:///c:/Projects/Kroma_Events/tests/test_concurrency.py) | 5 concurrent seekers competing for 1 seat $\rightarrow$ exactly 1 succeeds, zero overbooking |
+| [`tests/test_concurrency.py`](file:///c:/Projects/Kroma_Events/tests/test_concurrency.py) | 5 concurrent seekers competing for 1 seat → exactly 1 succeeds, zero overbooking |
 | [`tests/test_lifecycle.py`](file:///c:/Projects/Kroma_Events/tests/test_lifecycle.py) | Enroll/cancel/re-enroll cycle, duplicate enrollment rejection, capacity reclamation |
 | [`tests/test_otp.py`](file:///c:/Projects/Kroma_Events/tests/test_otp.py) | OTP SHA-256 hashing, 5-min TTL expiry, 3-attempt lockout, resend supersession |
+
+---
+
+## 🚂 Deploying to Railway
+
+The project ships with a [`railway.json`](file:///c:/Projects/Kroma_Events/railway.json) that automates everything on first deploy.
+
+### Steps
+
+1. **Push your code to GitHub** (if not already done):
+   ```bash
+   git add .
+   git commit -m "Add Railway deployment config"
+   git push origin main
+   ```
+
+2. **Deploy on Railway:**
+   - Go to [railway.app](https://railway.app/) → **New Project** → **Deploy from GitHub repo**
+   - Select the `Kroma_Events` repository
+   - Railway auto-detects the config and deploys
+
+3. **Set Environment Variables** in the Railway dashboard:
+   | Variable | Value |
+   |---|---|
+   | `SECRET_KEY` | A strong random string (e.g. generate with `python -c "import secrets; print(secrets.token_hex(32))"`) |
+   | `DEBUG` | `False` |
+   | `ALLOWED_HOSTS` | `your-app-name.up.railway.app` |
+
+4. **Get your live URL** from the Railway dashboard → **Settings** → **Domains**, then update the README URLs above.
+
+> Railway automatically runs `python manage.py migrate && python manage.py seed_data` before starting the server (configured in [`railway.json`](file:///c:/Projects/Kroma_Events/railway.json)), so demo data is ready the moment it goes live.
 
 ---
 
